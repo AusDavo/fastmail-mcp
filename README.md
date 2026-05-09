@@ -41,7 +41,7 @@ A Model Context Protocol (MCP) server that provides access to the Fastmail API, 
 ## Setup
 
 ### Prerequisites
-- Node.js 18+ 
+- Node.js 20+ 
 - A Fastmail account with API access
 - Fastmail API token
 
@@ -72,7 +72,11 @@ A Model Context Protocol (MCP) server that provides access to the Fastmail API, 
    ```bash
    export FASTMAIL_API_TOKEN="your_api_token_here"
    # Optional: customize base URL (defaults to https://api.fastmail.com)
+   # Only api.fastmail.com and www.fastmailusercontent.com are accepted by default.
+   # For self-hosted JMAP servers, also set FASTMAIL_ALLOW_UNSAFE_BASE_URL=true.
    export FASTMAIL_BASE_URL="https://api.fastmail.com"
+   # Optional: customize attachment download directory (defaults to ~/Downloads/fastmail-mcp/)
+   export FASTMAIL_DOWNLOAD_DIR="/path/to/your/downloads"
    ```
 
 ### Running the Server
@@ -108,7 +112,7 @@ Pin to a tagged release:
 
 ```bash
 FASTMAIL_API_TOKEN="your_token" \
-  npx --yes github:MadLlama25/fastmail-mcp@v1.7.1 fastmail-mcp
+  npx --yes github:MadLlama25/fastmail-mcp@v1.9.4 fastmail-mcp
 ```
 
 ## Install as a Claude Desktop Extension (DXT)
@@ -143,21 +147,21 @@ You can install this server as a Desktop Extension for Claude Desktop using the 
 
 - **list_mailboxes**: Get all mailboxes in your account
 - **list_emails**: List emails from a specific mailbox or all mailboxes
-  - Parameters: `mailboxId` (optional), `limit` (default: 20)
+  - Parameters: `mailboxId` (optional), `limit` (default: 20), `ascending` (optional, oldest first)
 - **get_email**: Get a specific email by ID
   - Parameters: `emailId` (required)
 - **send_email**: Send an email (supports threading via optional `inReplyTo` and `references` headers)
-  - Parameters: `to` (required array), `cc` (optional array), `bcc` (optional array), `from` (optional), `mailboxId` (optional), `subject` (required), `textBody` (optional), `htmlBody` (optional), `inReplyTo` (optional array), `references` (optional array)
-- **reply_email**: Reply to an existing email with proper threading headers (automatically builds In-Reply-To and References)
-  - Parameters: `originalEmailId` (required), `to` (optional array, defaults to original sender), `cc` (optional array), `bcc` (optional array), `from` (optional), `textBody` (optional), `htmlBody` (optional)
+  - Parameters: `to` (required array), `cc` (optional array), `bcc` (optional array), `from` (optional), `mailboxId` (optional), `subject` (required), `textBody` (optional), `htmlBody` (optional), `inReplyTo` (optional array), `references` (optional array), `replyTo` (optional array)
+- **reply_email**: Reply to an existing email with proper threading headers (automatically builds In-Reply-To and References). Set `send=false` to save as draft instead of sending.
+  - Parameters: `originalEmailId` (required), `to` (optional array, defaults to original sender), `cc` (optional array), `bcc` (optional array), `from` (optional), `textBody` (optional), `htmlBody` (optional), `send` (optional boolean, default: true), `replyTo` (optional array)
 - **save_draft**: Save an email as a draft without sending (supports threading headers for reply drafts)
   - Parameters: `to` (required array), `cc` (optional array), `bcc` (optional array), `from` (optional), `subject` (required), `textBody` (optional), `htmlBody` (optional), `inReplyTo` (optional array), `references` (optional array)
 - **create_draft**: Create a minimal email draft (at least one of to/subject/body required)
-  - Parameters: `to` (optional array), `cc` (optional array), `bcc` (optional array), `from` (optional), `mailboxId` (optional), `subject` (optional), `textBody` (optional), `htmlBody` (optional)
+  - Parameters: `to` (optional array), `cc` (optional array), `bcc` (optional array), `from` (optional), `mailboxId` (optional), `subject` (optional), `textBody` (optional), `htmlBody` (optional), `replyTo` (optional array)
 - **search_emails**: Search emails by content
-  - Parameters: `query` (required), `limit` (default: 20)
+  - Parameters: `query` (required), `limit` (default: 20), `ascending` (optional, oldest first)
 - **get_recent_emails**: Get the most recent emails from a mailbox (inspired by JMAP-Samples top-ten)
-  - Parameters: `limit` (default: 10, max: 50), `mailboxName` (default: 'inbox')
+  - Parameters: `limit` (default: 10, max: 50), `mailboxName` (default: 'inbox'), `ascending` (optional, oldest first)
 - **mark_email_read**: Mark an email as read or unread
   - Parameters: `emailId` (required), `read` (default: true)
 - **delete_email**: Delete an email (move to trash)
@@ -176,7 +180,7 @@ You can install this server as a Desktop Extension for Claude Desktop using the 
 - **download_attachment**: Download an email attachment. If savePath is provided, saves the file to disk and returns the file path and size. Otherwise returns a download URL.
   - Parameters: `emailId` (required), `attachmentId` (required), `savePath` (optional)
 - **advanced_search**: Advanced email search with multiple criteria
-  - Parameters: `query` (optional), `from` (optional), `to` (optional), `subject` (optional), `hasAttachment` (optional), `isUnread` (optional), `mailboxId` (optional), `after` (optional), `before` (optional), `limit` (default: 50)
+  - Parameters: `query` (optional), `from` (optional), `to` (optional), `subject` (optional), `hasAttachment` (optional), `isUnread` (optional), `mailboxId` (optional), `after` (optional), `before` (optional), `limit` (default: 50), `ascending` (optional, oldest first)
 - **get_thread**: Get all emails in a conversation thread
   - Parameters: `threadId` (required)
 
@@ -242,6 +246,26 @@ The server uses bearer token authentication with Fastmail's API. API tokens prov
 ### Rate Limits
 Fastmail applies rate limits to API requests. The server handles standard rate limiting, but excessive requests may be throttled.
 
+## CalDAV Calendar Support
+
+Fastmail does not currently expose calendar access via JMAP API tokens — the `urn:ietf:params:jmap:calendars` scope is not available because the JMAP Calendars specification is still an IETF Internet-Draft ([draft-ietf-jmap-calendars](https://datatracker.ietf.org/doc/draft-ietf-jmap-calendars/)). Fastmail has stated they will add JMAP calendar support once the spec becomes an RFC, but there is no public timeline.
+
+However, Fastmail fully supports **CalDAV** for calendar access via `caldav.fastmail.com`. This server automatically falls back to CalDAV when JMAP calendar access is unavailable.
+
+### Setup
+
+1. Create an app-specific password on Fastmail:
+   - Go to **Settings → Privacy & Security → Manage app passwords**
+   - Create a new app password (you can name it "CalDAV MCP" or similar)
+
+2. Set the following environment variables:
+   ```bash
+   export FASTMAIL_CALDAV_USERNAME="your-email@fastmail.com"
+   export FASTMAIL_CALDAV_PASSWORD="your-app-specific-password"
+   ```
+
+When these variables are set, the calendar tools (`list_calendars`, `list_calendar_events`, `get_calendar_event`, `create_calendar_event`) will automatically fall back to CalDAV if JMAP calendars are not available. When these variables are not set, the server behaves exactly as before (JMAP only).
+
 ## Development
 
 ### Project Structure
@@ -250,7 +274,8 @@ src/
 ├── index.ts              # Main MCP server implementation
 ├── auth.ts              # Authentication handling
 ├── jmap-client.ts       # JMAP client wrapper
-└── contacts-calendar.ts # Contacts and calendar extensions
+├── contacts-calendar.ts # Contacts and calendar extensions
+└── caldav-client.ts     # CalDAV calendar client (fallback)
 ```
 
 ### Building

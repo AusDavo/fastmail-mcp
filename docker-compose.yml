@@ -9,6 +9,9 @@ services:
       - FASTMAIL_API_TOKEN=${FASTMAIL_API_TOKEN}
       - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN}
       - MCP_HTTP_PORT=3000
+      - FASTMAIL_DOWNLOAD_DIR=/data/downloads
+    volumes:
+      - ${FASTMAIL_DOWNLOAD_DIR_HOST:-./downloads}:/data/downloads
     networks:
       - caddy_rev-proxy
 
